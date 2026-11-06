@@ -1,5 +1,5 @@
 """Original native benchmark with durable before-reset physical measurements."""
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
 
@@ -85,12 +85,12 @@ class PhysicalRecorderCfg(RecorderTermCfg):
 
 
 def run_recorded_benchmark(policy, files, *, output, source_revision, checkpoint_artifact_id,
-                           device='cuda:0', num_envs=1024, future_frames=10, anchor_obs=False):
+                           device='cuda:0', num_envs=1024, future_frames=10, anchor_obs=False, checkpoint_path=None):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     writer = ControlCapture(output/'physical')
     metadata = dict(source_revision=source_revision, checkpoint_artifact_id=checkpoint_artifact_id,
-        reference_files=list(map(str, files)), control_dt_s=.02, physics_dt_s=.005,
+        reference_files=list(map(str, files)), checkpoint_path=checkpoint_path, control_dt_s=.02, physics_dt_s=.005,
         state_representation='MuJoCo pelvis qpos36 and qvel35; root angular velocity in body frame',
         capture='authoritative qpos/qvel before auto-reset; derived SDK body poses not used',
         capacity_evidence_available=False, contact_force_available=False,
@@ -111,6 +111,8 @@ def run_recorded_benchmark(policy, files, *, output, source_revision, checkpoint
         metadata['body_names'] = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i) for i in range(1, model.nbody)]
         metadata['joint_names'] = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(1, model.njnt)]
         metadata['mujoco_version'] = mujoco.__version__
+        metadata['resolved_environment_arguments'] = asdict(args)
+        metadata['termination_terms'] = list(env.termination_manager.active_terms)
         (output/'metadata.json').write_text(json.dumps(metadata, indent=2))
         library = env.command_manager.get_term('motion').library
         inventory.extend(dict(index=i, name=c.name, frames=c.length, start=c.start)
