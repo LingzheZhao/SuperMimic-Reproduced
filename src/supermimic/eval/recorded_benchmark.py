@@ -71,6 +71,7 @@ class PhysicalRecorder(RecorderTerm):
 
     def record_pre_reset(self, env_ids):
         self._record(env_ids, True)
+        self.writer.flush()
         for environment in env_ids.tolist():
             self.previous.pop(environment, None)
 
