@@ -44,3 +44,23 @@ class ControlCapture:
                 np.savez_compressed(stream, **{key: np.stack([row[key] for row in self.initial])
                                               for key in self.initial[0]})
             self.initial.clear()
+
+
+def selection_files(path):
+    """Consume a frozen original-NPZ selection without directory filtering."""
+    import yaml
+    selected = yaml.safe_load(Path(path).read_text())
+    sources = selected['sources']
+    if (len(sources) != selected['selected_count'] or not sources
+            or [row['evaluation_index'] for row in sources] != list(range(len(sources)))
+            or len({row['artifact_id'] for row in sources}) != len(sources)):
+        raise ValueError('selection requires complete consecutive original clip identities')
+    files = []
+    for row in sources:
+        original = Path(row['npz'])
+        if (not original.is_file() or original.stem != row['name']
+                or row['native_request_controls'] != row['poses']
+                or row['strict_reference_controls'] != row['poses']-1):
+            raise ValueError('original NPZ or native/genuine reference denominator differs')
+        files.append(str(original))
+    return files, selected

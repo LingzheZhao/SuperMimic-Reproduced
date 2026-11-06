@@ -85,7 +85,8 @@ class PhysicalRecorderCfg(RecorderTermCfg):
 
 
 def run_recorded_benchmark(policy, files, *, output, source_revision, checkpoint_artifact_id,
-                           device='cuda:0', num_envs=1024, future_frames=10, anchor_obs=False, checkpoint_path=None):
+                           device='cuda:0', num_envs=1024, future_frames=10, anchor_obs=False, checkpoint_path=None,
+                           reference_artifact_id=None, selection=None):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     writer = ControlCapture(output/'physical')
@@ -98,6 +99,9 @@ def run_recorded_benchmark(policy, files, *, output, source_revision, checkpoint
         native_parent_revision='ba6105349069bf040f1fdad60873d13138d505a2', compact_library=True, library_fp16=False,
         native_return_denominator='0.1 times actual executed steps',
         full_request_return_denominator='0.1 times declared native request controls')
+    metadata['reference_artifact_id'] = reference_artifact_id
+    if selection is not None:
+        (output/'selection.json').write_text(json.dumps(selection, indent=2))
     (output/'metadata.json').write_text(json.dumps(metadata, indent=2))
     inventory = []
     def environment_factory(args, device):
