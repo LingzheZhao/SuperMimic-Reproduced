@@ -13,6 +13,11 @@ class ControlCapture:
         self.initial = []
         self.chunk = 0
 
+    def __deepcopy__(self, memo):
+        # Recorder configuration copies share this one owned output stream.
+        memo[id(self)] = self
+        return self
+
     def start(self, *, environment, episode, clip, frame, state):
         self.initial.append(dict(environment=environment, episode=episode, clip=clip,
                                  frame=frame, state=np.asarray(state).copy()))
