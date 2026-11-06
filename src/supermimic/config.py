@@ -32,6 +32,7 @@ class EnvCfg:
     replay_capacity: int = 1000
     future_frames: int = 10
     compact_library: bool = False
+    library_fp16: bool = True  # Storage only; disable to retain original FP32 references.
     anchor_obs: bool = False
 
 
