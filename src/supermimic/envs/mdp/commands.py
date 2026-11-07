@@ -430,7 +430,7 @@ class MultiClipMotionCommandCfg(CommandTermCfg):
     velocity_range: dict[str, tuple[float, float]] = field(default_factory=dict)
     joint_position_range: tuple[float, float] = (0.0, 0.0)
     sampling_mode: Literal["return", "uniform", "start"] = "return"
-    # Explicit partition in npz_files order; omitted groups preserve whole-library sampling.
+    # Explicit partition in loaded library clip order; omitted groups preserve whole-library sampling.
     reset_clip_groups: dict[str, list[int]] | None = None
     reset_group_probabilities: dict[str, float] | None = None
     # Return-based sampling (plan D14).
