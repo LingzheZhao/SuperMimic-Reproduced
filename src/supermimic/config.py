@@ -33,6 +33,8 @@ class EnvCfg:
     future_frames: int = 10
     compact_library: bool = False
     library_fp16: bool = True  # Storage only; disable to retain original FP32 references.
+    reset_clip_groups: dict[str, list[int]] | None = None
+    reset_group_probabilities: dict[str, float] | None = None
     anchor_obs: bool = False
 
 

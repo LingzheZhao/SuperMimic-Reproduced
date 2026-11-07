@@ -29,6 +29,7 @@ from mjlab.utils.lab_api.math import (
 )
 
 from supermimic.envs.mdp.motion_library import MotionLibrary
+from supermimic.envs.mdp.group_reset_sampling import GroupResetSampling
 
 if TYPE_CHECKING:
     from mjlab.entity import Entity
@@ -58,7 +59,16 @@ class MultiClipMotionCommand(CommandTerm):
         print(f"[INFO] {self.library.summary()}")
         lib = self.library
 
+        self.reset_groups = None
+        if cfg.reset_clip_groups is not None or cfg.reset_group_probabilities is not None:
+            if cfg.sampling_mode != "return":
+                raise ValueError("Clip-group reset sampling requires return sampling mode")
+            self.reset_groups = GroupResetSampling(
+                lib.num_clips, lib.frame_clip[lib.bin_start],
+                cfg.reset_clip_groups, cfg.reset_group_probabilities or {},
+            )
         n = self.num_envs
+        self._active_reset_group = torch.full((n,), -1, dtype=torch.long, device=self.device)
         self.frame = torch.zeros(n, dtype=torch.long, device=self.device)
         self.clip_end = torch.zeros(n, dtype=torch.bool, device=self.device)
         self._refresh_ref()
@@ -199,6 +209,8 @@ class MultiClipMotionCommand(CommandTerm):
         ids = torch.arange(self.num_envs, device=self.device) if env_mask is None else env_mask.nonzero().squeeze(-1)
         if ids.numel() == 0:
             return
+        if self.reset_groups is not None:
+            self.reset_groups.record_controls(self._active_reset_group[ids])
         pos = self.ep_len[ids].clamp_max(self.max_ep_steps - 1)
         self.ep_rewards[ids, pos] = reward[ids]
         self.ep_bins[ids, pos] = self.library.bin_of_frame(self.frame[ids])
@@ -257,14 +269,17 @@ class MultiClipMotionCommand(CommandTerm):
             f = torch.randint(0, lib.num_frames, (n,), device=self.device)
             return torch.minimum(f, lib.last_frame_of(f) - 2).clamp_min(0)
         assert cfg.sampling_mode == "return"
-        hard = torch.softmax(-cfg.softmax_temp * self.bin_return / cfg.g_max, dim=0)
-        self.bin_memory = (1 - cfg.memory_alpha) * self.bin_memory + cfg.memory_alpha * hard
-        p = (
-            cfg.uniform_ratio / lib.num_bins
-            + cfg.hard_ratio * hard
-            + cfg.memory_ratio * self.bin_memory / self.bin_memory.sum()
-        )
-        p = p / p.sum()
+        if self.reset_groups is not None:
+            p, self.bin_memory = self.reset_groups.distribution(self.bin_return, self.bin_memory, cfg)
+        else:
+            hard = torch.softmax(-cfg.softmax_temp * self.bin_return / cfg.g_max, dim=0)
+            self.bin_memory = (1 - cfg.memory_alpha) * self.bin_memory + cfg.memory_alpha * hard
+            p = (
+                cfg.uniform_ratio / lib.num_bins
+                + cfg.hard_ratio * hard
+                + cfg.memory_ratio * self.bin_memory / self.bin_memory.sum()
+            )
+            p = p / p.sum()
         b = torch.multinomial(p, n, replacement=True)
         u = torch.rand(n, device=self.device)
         f = lib.bin_start[b] + (u * (lib.bin_end[b] - lib.bin_start[b]).float()).long()
@@ -272,6 +287,10 @@ class MultiClipMotionCommand(CommandTerm):
         ent = -(p * (p + 1e-12).log()).sum() / math.log(max(lib.num_bins, 2))
         self.metrics["sampling_entropy"][:] = ent
         return f
+
+    def reset_group_statistics(self) -> dict:
+        """Cumulative reset counts and collected controls; reset probability is not exposure."""
+        return {} if self.reset_groups is None else self.reset_groups.statistics()
 
     def _write_reference_state_to_sim(self, env_ids, root_pos, root_ori, root_lin_vel, root_ang_vel, joint_pos, joint_vel):
         soft_limits = self.robot.data.soft_joint_pos_limits[env_ids]
@@ -294,6 +313,10 @@ class MultiClipMotionCommand(CommandTerm):
         forced = self.forced_frame[env_ids]
         self.frame[env_ids] = torch.where(forced >= 0, forced, sampled)
         self.clip_end[env_ids] = False
+        if self.reset_groups is not None:
+            clips = self.library.frame_clip[self.frame[env_ids]]
+            self.reset_groups.record_resets(clips)
+            self._active_reset_group[env_ids] = self.reset_groups.clip_group[clips]
 
         r = self.library.ref(self.frame[env_ids])
         root_pos = r.root_pos_w + self._env.scene.env_origins[env_ids]
@@ -407,6 +430,9 @@ class MultiClipMotionCommandCfg(CommandTermCfg):
     velocity_range: dict[str, tuple[float, float]] = field(default_factory=dict)
     joint_position_range: tuple[float, float] = (0.0, 0.0)
     sampling_mode: Literal["return", "uniform", "start"] = "return"
+    # Explicit partition in loaded library clip order; omitted groups preserve whole-library sampling.
+    reset_clip_groups: dict[str, list[int]] | None = None
+    reset_group_probabilities: dict[str, float] | None = None
     # Return-based sampling (plan D14).
     uniform_ratio: float = 0.5
     hard_ratio: float = 0.4
