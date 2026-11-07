@@ -66,7 +66,11 @@ class Trainer:
                 sampling_mode=cfg.env.sampling_mode,
                 replay_capacity=cfg.env.replay_capacity,
                 compact_library=cfg.env.compact_library,
-                extra_command_kwargs={"library_fp16": cfg.env.library_fp16},
+                extra_command_kwargs={
+                    "library_fp16": cfg.env.library_fp16,
+                    "reset_clip_groups": cfg.env.reset_clip_groups,
+                    "reset_group_probabilities": cfg.env.reset_group_probabilities,
+                },
                 anchor_obs=cfg.env.anchor_obs,
                 seed=cfg.seed + 1000 * self.rank,
             ),
